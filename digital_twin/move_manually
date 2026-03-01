@@ -1,1 +1,76 @@
+from xarm.wrapper import XArmAPI
+import time
 
+ROBOT_IP = '192.168.1.152'
+
+# Lite6 joint limits (degrees)
+JOINT_LIMITS = [
+    (-180, 180),  # Joint 1
+    (-90, 90),    # Joint 2
+    (-90, 90),    # Joint 3
+    (-180, 180),  # Joint 4
+    (-120, 120),  # Joint 5
+    (-360, 360)   # Joint 6
+]
+
+# Connect to robot
+arm = XArmAPI(ROBOT_IP)
+arm.motion_enable(True)
+arm.set_mode(0)
+arm.set_state(0)
+print("Connected to uArm Lite6")
+
+def move_joint_safe(joint_id, angle):
+    # Clamp angle to joint limits
+    min_angle, max_angle = JOINT_LIMITS[joint_id-1]
+    angle = max(min_angle, min(max_angle, angle))
+    try:
+        arm.set_servo_angle(servo_id=joint_id, angle=angle, speed=20)
+    except Exception as e:
+        print(f"Error moving joint {joint_id}: {e}")
+        arm.stop()
+        arm.clear_alarm()
+        arm.motion_enable(True)
+        arm.set_mode(0)
+        arm.set_state(0)
+
+try:
+    while True:
+        # Show current joint angles
+        joints = arm.get_servo_angle(is_radian=False)[1]  # inner list
+        print("Current joint angles:", ["%.1f" % j for j in joints])
+
+        # Ask which joint to move
+        cmd = input("Enter joint number 1-6 (0 to stop all motion): ").strip()
+        if cmd == "":
+            continue
+        joint_id = int(cmd)
+        if joint_id == 0:
+            arm.stop()
+            print("All motion stopped.")
+            continue
+        if not (1 <= joint_id <= 6):
+            print("Invalid joint number. Enter 1-6.")
+            continue
+
+        # Ask target angle
+        angle_cmd = input(f"Enter target angle for joint {joint_id}: ").strip()
+        if angle_cmd == "":
+            continue
+        angle = float(angle_cmd)
+
+        move_joint_safe(joint_id, angle)
+
+except KeyboardInterrupt:
+    print("\nExiting live joint control...")
+
+finally:
+    # Move robot to safe home position
+    print("Returning robot to home position...")
+    for i in range(1, 7):
+        move_joint_safe(i, 0)
+        time.sleep(0.3)
+
+    arm.motion_enable(False)
+    arm.disconnect()
+    print("Robot disconnected safely.")
