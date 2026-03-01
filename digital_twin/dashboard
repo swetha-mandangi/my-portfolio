@@ -1,1 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>   
+    <title>LITE6 CONTROL DASHBOARD</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+    
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        h1 { text-align: center; font-size: 32px; }
 
+        .container { width: 100%; margin-top: 20px; background: #1a1a1a; padding: 15px; border-radius: 8px; }
+    
+        .row { display: flex; width: 100%; margin-bottom: 10px; }
+        .item { flex: 1; margin: 5px; background: #222; padding: 10px; border-radius: 5px; }
+        .label { font-weight: bold; }
+        
+        /* Bottom boxes */
+        #video_box, #sim_box {
+            flex: 1; 
+            background: black;
+            height: 450px;
+            border-radius: 8px;
+            margin: 10px;
+            overflow: hidden;
+        }
+        #video_feed { width: 100%; height: 100%; object-fit: cover; display:block; }
+        #simCanvas { width: 100%; height: 100%; background:black; display:block; }
+        
+        button { margin: 8px 6px; padding:6px 10px; }
+        input[type=range] { width: 100%; }
+    </style>
+</head>
+<body>
+        
+<h1>LITE6 CONTROL DASHBOARD</h1>
+    
+<div class="container">
+    
+    <!-- JOINT ANGLES -->
+    <div class="label">Joint angles:</div>
+    <div class="row">
+        <div class="item" id="joint1">JOINT 1: -</div>
+        <div class="item" id="joint2">JOINT 2: -</div> 
+        <div class="item" id="joint3">JOINT 3: -</div>
+    </div>
+    <div class="row">
+        <div class="item" id="joint4">JOINT 4: -</div>  
+        <div class="item" id="joint5">JOINT 5: -</div>
+        <div class="item" id="joint6">JOINT 6: -</div>
+    </div>
+    
+    <!-- JOINT SLIDERS -->
+    <div class="label">Move joints manually:</div>
+
+ <div class="row">
+        <div class="item"><input type="range" id="slider1" min="0" max="180"> JOINT 1</div>
+        <div class="item"><input type="range" id="slider2" min="0" max="180"> JOINT 2</div>
+        <div class="item"><input type="range" id="slider3" min="0" max="180"> JOINT 3</div>
+    </div>
+    <div class="row">
+        <div class="item"><input type="range" id="slider4" min="0" max="180"> JOINT 4</div>
+        <div class="item"><input type="range" id="slider5" min="0" max="180"> JOINT 5</div>
+        <div class="item"><input type="range" id="slider6" min="0" max="180"> JOINT 6</div>
+    </div>
+
+    <div class="row">
+        <div class="item" id="status">STATUS: Rest</div>
+        <div class="item" id="voice_log">Voice log:</div>
+    </div>
+    
+    <button onclick="startVoice()">Start Voice</button>
+</div>
+        
+<!-- bottom boxes -->
+<div style="display:flex; width:100%; margin-top:20px;">
+    <div id="video_box">
+        <img id="video_feed" src="/video_feed">
+    </div>
+    <div id="sim_box">
+    </div>
+</div>
+    
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+
+    
+<script>
+const simBox = document.getElementById("sim_box");
+        
+/* ===== SCENE ===== */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a1a);
+        
+/* ===== CAMERA ===== */
+const camera = new THREE.PerspectiveCamera(
+    60,
+    simBox.clientWidth / simBox.clientHeight,
+    0.1,
+    2000
+);
+camera.position.set(16, 12, 16);
+camera.lookAt(0,6,0);
+
+/* ===== RENDERER ===== */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(simBox.clientWidth, simBox.clientHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+simBox.appendChild(renderer.domElement);
+    
+/* ===== LIGHTS ===== */
+scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(10,20,10);
+scene.add(light);
+/* ===== FLOOR ===== */
+scene.add(new THREE.GridHelper(40,80));
+        
+/* ===== MATERIALS ===== */
+const whiteMat = new THREE.MeshStandardMaterial({ color:0xf5f5f5, metalness:0.4 });
+const darkMat  = new THREE.MeshStandardMaterial({ color:0x444444 });
+        
+/* ===== ROOT ===== */  
+const robot = new THREE.Group();
+scene.add(robot);
+    
+/* ================= JOINT 1 (BASE) ================= */
+const joint1 = new THREE.Group();
+robot.add(joint1);
+
+const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(3,3,1.5,64),
+    darkMat
+);
+joint1.add(base);
+
+/* ================= JOINT 2 (SHOULDER) ================= */
+const joint2 = new THREE.Group();
+joint2.position.y = 1.5;
+joint1.add(joint2);
+
+const shoulder = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.5,1.5,1,64),
+);
+joint2.add(shoulder);
+        
+const link1 = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2,6,1.2),
+    whiteMat
+);      
+link1.position.y = 3;   
+joint2.add(link1);
+
+/* ================= JOINT 3 (ELBOW) ================= */
+const joint3 = new THREE.Group();
+joint3.position.y = 6;
+joint2.add(joint3);
+
+const elbow = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.2,1.2,1,64),
+    darkMat
+);
+joint3.add(elbow);
+
+const link2 = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1,5,1.1),
+    whiteMat
+);
+link2.position.y = 2.5;
+joint3.add(link2);
+    
+/* ================= JOINT 4 (WRIST 1) ================= */
+const joint4 = new THREE.Group();
+joint4.position.y = 5;
+joint3.add(joint4);
+
+const wrist1 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9,0.9,1,64),
+    darkMat
+);
+joint4.add(wrist1);
+
+/* ================= JOINT 5 (WRIST 2) ================= */
+const joint5 = new THREE.Group();
+joint5.position.y = 1;
+joint4.add(joint5);
+
+const wrist2 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.8,0.8,1,64),
+    darkMat
+);
+joint5.add(wrist2);
+
+/* ================= JOINT 6 (WRIST 3) ================= */
+const joint6 = new THREE.Group();
+joint6.position.y = 1;
+joint5.add(joint6);
+
+const wrist3 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.7,0.7,1,64),
+    darkMat
+);
+joint6.add(wrist3);   
+
+/* ================= GRIPPER ================= */
+const gripperBase = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2,1,1.2),
+    darkMat
+);
+gripperBase.position.y = 1;
+joint6.add(gripperBase);
+
+const finger1 = new THREE.Mesh(  
+    new THREE.BoxGeometry(0.25,2,0.4),
+    darkMat
+);
+finger1.position.set(0.5,2,0);
+joint6.add(finger1);
+    
+const finger2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25,2,0.4),
+    darkMat
+);
+finger2.position.set(-0.5,2,0);  
+joint6.add(finger2);  
+
+/* ===== ANIMATION LOOP (NO AUTO ROTATION) ===== */
+function animate(){
+    requestAnimationFrame(animate);
+    renderer.render(scene,camera);
+} 
+animate();
+
+/* ===== CONNECT TO YOUR REAL ROBOT ANGLES ===== */
+socket.on("robot_state", data => { 
+    if(data.angles){
+        const a = data.angles;
+  
+        joint1.rotation.y = THREE.MathUtils.degToRad(a[0]);
+        joint2.rotation.z = THREE.MathUtils.degToRad(a[1]);
+        joint3.rotation.z = THREE.MathUtils.degToRad(a[2]);
+        joint4.rotation.y = THREE.MathUtils.degToRad(a[3]);
+        joint5.rotation.z = THREE.MathUtils.degToRad(a[4]);
+        joint6.rotation.y = THREE.MathUtils.degToRad(a[5]);
+    }
+});
+
+/* ===== RESIZE ===== */
+window.addEventListener("resize",()=>{
+    camera.aspect = simBox.clientWidth / simBox.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(simBox.clientWidth, simBox.clientHeight);
+});
+</script>
+
+
+
+</body>
+</html>
